@@ -5,6 +5,10 @@
             "description": "SELECT c FROM TABLE A "
         },
         {
+            "name": "Norm 1000",
+            "description": "SELECT c FROM TABLE A "
+        },
+        {
             "name": "Hard 8953",
             "description": "SELECT c FROM TABLE C "
         },

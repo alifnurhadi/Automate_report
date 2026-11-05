@@ -2,3 +2,5 @@ Script/python/secret.json
 Script/python/test*
 Script/python/.env*
 *.txt
+jira_snapshots/
+__pycache__

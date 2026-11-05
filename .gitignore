@@ -1,3 +1,4 @@
-.\Script\python\secret.json
-C:\Users\Iykra03\Documents\Iykra_alif\Script\python\secret.json
-./Script/python/secret.json
+Script/python/secret.json
+Script/python/test*
+Script/python/.env*
+*.txt

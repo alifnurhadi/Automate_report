@@ -14,20 +14,34 @@ def describe_field_meta(meta):
 
     return out
 
+def _text(args):
+    if args.__class__ is str:
+        return args
+    if isinstance(args, (list, tuple)):
+        return "\n".join(map(str, args))
+    return str(args)
+
+
+
+
 def parse_json(args:dict):
     data_field = args.get('filled_fields',{})
+    pseudocode = data_field.get('Pseudocode','')
+    langkah = data_field.get('Langkah Pengerjaan','')
+    final_code =  data_field.get('Query Final','')
+
     structure =  {
     'ticket' : args['key'],
     'title':data_field.get('Summary',''),
-    'server':'|'.join(data_field.get('Server','')),
-    'database':'|'.join(data_field.get('Database','')),
-    'table':'|'.join(data_field.get('Tabel','')),
+    'server':' | '.join(data_field.get('Server','')),
+    'database':' | '.join(data_field.get('Database','')),
+    'table':' | '.join(data_field.get('Tabel','')),
     'start_wbs' : data_field.get('Data Analyst Start Date',''),
     'end_wbs' : data_field.get('End date',''),
     'description':data_field['Description'],
-    'pseudocode':data_field.get('Pseudocode',''),
+    'langkah_kerja':' | '.join({pseudocode,langkah,final_code}),
     'disclaimer':data_field.get('Disclaimer',''),
-    'group_adhoc':data_field.get('Group AdHoc',''),
+    'group_adhoc':data_field.get('Group AdHoc',[])[0],
     }
     return structure
 

@@ -1,6 +1,7 @@
-Script/python/secret.json
+Script/python/secret*
 Script/python/test*
 Script/python/.env*
 *.txt
 jira_snapshots/
 __pycache__
+*secret*

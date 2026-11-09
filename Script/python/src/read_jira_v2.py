@@ -5,6 +5,7 @@ Fetch Jira tickets with the `jira` library and save a JSON snapshot.
 import argparse
 import json
 import os
+from pathlib import Path
 import sys
 
 from jira import JIRA
@@ -13,6 +14,8 @@ from jira.exceptions import JIRAError
 from utils.parser import parse_json, simplify
 
 
+secret_path = Path(__file__).resolve().parent.parent / "secret.json"
+print(secret_path)
 def load_issue_keys(args, parser):
     if bool(args.issue_key) == bool(args.file):
         parser.error("Repeat action, Put only either the ticket it self as the argument or the .txt file contains the issue")
@@ -39,10 +42,6 @@ def build_filled_fields(issue, id_to_name):
     return filled
 
 
-secret_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "secret.json")
-# with open(secret_path, encoding="utf-8") as f:
-#     secret = json.load(f)
-#
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description="Fetch Jira tickets and save snapshots.")
     p.add_argument("issue_key", nargs="*", help="Jira issue keys")
@@ -56,14 +55,16 @@ def parse_args(argv=None):
     return args
 
 def jira_access(path , api="2"):
+    '''Returning jira-client and id-to-name data'''
+    print('this is path', path)
 
-    with open(path, encoding="utf-8") as f:
+    with open( path , 'r') as f:
         secret = json.load(f)
 
     client = JIRA(
         server=secret["JIRA_BASE_URL"].strip().rstrip("/"),
         token_auth=secret["JIRA_API_TOKEN"],
-        options={"rest_api_version": args.api},
+        options={"rest_api_version": api},
     )
 
     id_to_name = {f["id"]: f["name"] for f in client.fields()}
@@ -71,9 +72,9 @@ def jira_access(path , api="2"):
     return client , id_to_name
 
 
-def read_tickets(keys , fmt:str)-> tuple[set , dict]:
+def parse_tickets(keys , path , fmt:str ,args )-> tuple[set , dict]:
 
-    client, id_to_name = jira_access( secret_path , args.api)
+    client, id_to_name = jira_access(  path , args.api)
 
     result = {}
     for key in keys:
@@ -101,29 +102,38 @@ def read_tickets(keys , fmt:str)-> tuple[set , dict]:
 
 
 
-def write_output(result, out="jira_snapshots", save=True):
+def write_output(result, out="jira_snapshots", filename='' , save=True):
     output = json.dumps(result, indent=4, ensure_ascii=False, default=str)
 
     if save:
         os.makedirs(out, exist_ok=True)
-        path = os.path.join(out, "tickets.json")
+        path = os.path.join(out, f"{filename}.json")
         with open(path, "w", encoding="utf-8") as f:
             f.write(output)
         print(f"\nSaved: {path}", file=sys.stderr)
 
-    failed = [k for k, v in result.items() if isinstance(v, dict) and list(v) == ["error"]]
+    try :
+        failed = [k for k, v in result.items() if isinstance(v, dict) and list(v) == ["error"]]
+    except :
+        failed = []
+
     print(
         f"\nTotal requested: {len(result)} | "
         f"Successful: {len(result) - len(failed)} | Failed: {len(failed)}",
         file=sys.stderr
     )
 
-def main(args):
-    return read_tickets(args.keys, args.format)
+def main(path_cfg):
+    args = parse_args()
+    ticket , details = parse_tickets(args.keys, path_cfg , args.format, args)
+    return args,  ticket , details
 
 if __name__ == "__main__":
-    args = parse_args()
-    ticket , detail = main(args)
+
+    secret_path = Path(__file__).resolve().parent.parent / "secret.json"
+    args, ticket , detail = main(secret_path)
+
     print(detail)
     print(ticket)
-    # write_output(result, args.out, not args.no_save)
+    write_output(detail, args.out, 'result_detail' ,  not args.no_save)
+    write_output(ticket, args.out, 'tickets' ,  not args.no_save)

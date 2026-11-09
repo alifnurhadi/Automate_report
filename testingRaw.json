@@ -1,0 +1,130 @@
+{
+    "Resolution": "Done",
+    "Last Viewed": "2026-11-09T13:54:55.037+0700",
+    "Activation": "Active",
+    "Data Engineer End Date": "2026-05-12",
+    "Data Engineer Start Date": "2026-05-12",
+    "Data Analyst End Date": "2026-05-12",
+    "Data Analyst Start Date": "2026-05-11",
+    "Issue Type": "Data AdHoc",
+    "Data Engineer DRE": "Dudin Muhamad Awaludin",
+    "Milestone (WBSGantt)": "No",
+    "Units (WBSGantt)": 100.0,
+    "Manually scheduled (WBSGantt)": "No",
+    "Start date (WBSGantt)": "2026-05-11",
+    "Finish date (WBSGantt)": "2026-05-18",
+    "Progress (WBSGantt)": 100.0,
+    "Link BAQC": "https://bridrive.bri.co.id/f/c362c24129a04ec6a47c/?dl=1",
+    "Start date": "2026-05-12",
+    "End date": "2026-05-12",
+    "QA Team DDB": [
+        "Ecosystem"
+    ],
+    "Work Ratio": -1,
+    "Complexity": "Simple",
+    "Status Confirmation": "To Be Confirmed",
+    "Labels": [
+        "out-scope"
+    ],
+    "Demand_Division": "Regional Office Makassar",
+    "Data Domain": [
+        "CRITICAL_REPORT",
+        "L1133"
+    ],
+    "Reporter": "Bardian Adhitya",
+    "Klasifikasi QC": "Bisnis",
+    "Watchers": {
+        "watchCount": 3,
+        "isWatching": false
+    },
+    "Updated": "2026-11-05T11:29:18.831+0700",
+    "Description": "Dengan Hormat\r\n\r\nMohon bantuannya Untuk di tarikkan data Cretical report *Laporan Pinjaman Harian Kanwil (L1133)* untuk data Tanggal 31 Desember 2025 Dan 31 Januari 2026 Unit Kerja 5062 BRI UNIT OTTING.\r\n\r\nAtas Bantuannya Kami Ucapkan Banyak Terimah Kasih.\r\n\r\n \r\n\r\nHormat Kami\r\n\r\n \r\n\r\nMUHAMMAD YUSRI\r\n\r\nKepala Unit",
+    "Level RKA": "GL",
+    "Priority": "Medium Effort - Medium Value",
+    "Nota Dinas EDM": "B.657.e-EDM/EDP/DAP/05/2026",
+    "Is PII": "No",
+    "Subkoordinator Anggaran": "Subkoordinator Divisi",
+    "Created": "2026-05-11T11:23:39.659+0700",
+    "Attachment": [
+        "B.1.e-MKR5062052026.pdf",
+        "Doc1.docx"
+    ],
+    "Created date": "2025-12-18",
+    "Assignee": "Dudin Muhamad Awaludin",
+    "Tabel Final2": "dev_edm_dre.era26_625",
+    "Log Work": {
+        "startAt": 0,
+        "maxResults": 20,
+        "total": 0,
+        "worklogs": []
+    },
+    "Rank": "0|iu6gso:",
+    "Nama File Adhoc": "RAHASIA_ERA26-625_DATA CRETICAL REPORT",
+    "Link Download": "https://bridrive.bri.co.id/d/10ad2c9212e34a97ab7c/",
+    "Insiden Status": "active",
+    "Status": "Data Deliver",
+    "Creator": "Bardian Adhitya",
+    "Tipe Project": "RKF",
+    "SME Start Date": "2026-05-11",
+    "SME End Date": "2026-05-12",
+    "Data Tester": "Handi Bagus Prasetyo",
+    "Tahapan": "Not Started",
+    "Kritikalitas CIA": "Non-IT",
+    "Demand_Progress Status": "NOT STARTED",
+    "Langkah Pengerjaan": "Info dari DPO Report L1133 ada di tabel  DLY_KW_PINJAMAN_V2 DB 9000_PORTAL_DLY",
+    "Pseudocode": "SELECT * \r\n  FROM [9000_PORTAL_DLY].[dbo].[DLY_KW_PINJAMAN_V2]\r\n  where BR#=5062\r\nAND POSISI = --isi 31 des 2025 dan 31 jan 2026",
+    "Disclaimer": "Data bersumber dari Data report L1133",
+    "Group AdHoc": [
+        "Critical Report"
+    ],
+    "Tabel": [
+        "DLY_KW_PINJAMAN_V2"
+    ],
+    "Database": [
+        "9000_PORTAL_DLY"
+    ],
+    "Query Final": "on comment box",
+    "Server": [
+        "172.18.141.16"
+    ],
+    "Progress": {
+        "progress": 0,
+        "total": 0
+    },
+    "Project": "EDM Report & Data Adhoc 2026",
+    "Resolved": "2026-05-22T15:51:24.132+0700",
+    "Data Tersedia di DWH": "Ya",
+    "Summary AdHoc": "9 rows",
+    "Summary": "B.1.e-MKR/5062/05/2026 - PERMOHONAN DATA CRETICAL REPORT",
+    "Development": "{}",
+    "Root Cause Analysis": "TBC",
+    "Comment": {
+        "comments": [
+            {
+                "id": "2747190",
+                "author": "Dudin Muhamad Awaludin",
+                "body": "QUERY FINAL:\r\n\r\n\r\n\r\n \r\n{code:java}\r\n#=========================================\r\n# Import Dependencies \r\n#=========================================\r\nimport os, time, calendar\r\nimport pandas as pd\r\nimport re\r\nimport random, string\r\nimport json\r\nimport subprocess\r\n#import pymssql\r\nfrom datetime import date, datetime, timedelta\r\nfrom pyspark.sql import SparkSession, SQLContext, DataFrame\r\nfrom pyspark.sql import functions as F, types as T, Window as W\r\nfrom pyspark import SparkConf\r\nfrom functools import reduce\r\nfrom pytz import timezone\r\nos.environ['TZ'] = 'Asia/Jakarta'\r\ntime.tzset()\r\nprocess_start_date = (datetime.today())\r\nprint(\"Start Date: \", process_start_date.strftime(\"%Y-%m-%d %H:%M:%S\"))\r\n#=========================================\r\n# Pandas Config \r\n#=========================================\r\npd.options.display.html.table_schema=True\r\npd.options.display.max_columns=999\r\npd.options.display.max_rows=999\r\n#=========================================\r\n# Declare Variable \r\n#=========================================\r\nuser_session = \"70002574\"\r\njira = \"ERA26-625\"\r\npath_hdfs = f\"hdfs:///user/{user_session}/\"\r\npath_export = f\"{path_hdfs}{jira}/\"\r\n#=========================================\r\n# Spark Session \r\n#=========================================\r\nblocksize = 128*1024*1024\r\njdbc_jar = \"/home/cdsw/jars/jtds-1.3.1.jar\"\r\n# Force TLSv1 for legacy SQL Server\r\ntls_protocols = \"-Djdk.tls.client.protocols=TLSv1,TLSv1.1,TLSv1.2 -Djdk.tls.disabledAlgorithms=\"\r\nconf = SparkConf()\r\nconf.set(\"spark.driver.extraJavaOptions\", tls_protocols)\r\nconf.set(\"spark.executor.extraJavaOptions\", tls_protocols)\r\nspark = SparkSession \\\r\n        .builder \\\r\n        .appName(jira) \\\r\n        .config(conf=conf) \\\r\n        .config(\"spark.jars\", jdbc_jar) \\\r\n        .config(\"spark.sql.crossJoin.enabled\", \"true\") \\\r\n        .config(\"spark.dynamicAllocation.enabled\", \"false\") \\\r\n        .config(\"spark.executor.instances\", \"4\") \\\r\n        .config(\"spark.executor.cores\", \"4\") \\\r\n        .config(\"spark.executor.memory\", \"4g\") \\\r\n        .config(\"spark.network.timeout\", 3600) \\\r\n        .config(\"spark.yarn.executor.memoryOverhead\", \"4g\") \\\r\n        .config(\"spark.sql.files.maxPartitionBytes\", blocksize) \\\r\n        .config(\"spark.sql.files.minPartitionBytes\", blocksize) \\\r\n        .config(\"spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation\",\"true\") \\\r\n        .config(\"spark.ui.showConsoleProgress\", \"false\") \\\r\n        .config('spark.kryoserializer.buffer.max', '1g') \\\r\n        .config(\"spark.sql.session.timeZone\", \"Asia/Jakarta\") \\\r\n        .config(\"spark.sql.broadcastTimeout\", 3600) \\\r\n        .enableHiveSupport() \\\r\n        .getOrCreate()\r\nprint(\"Spark version : \" + spark.version)\r\n \r\n#GET DF SQL SERVER V2\r\ndef get_data_sqlserver(conndb, query):\r\n  df = (spark.read.format(\"jdbc\")\r\n        .option(\"driver\",\"net.sourceforge.jtds.jdbc.Driver\")\r\n        .option(\"url\",f\"jdbc:jtds:sqlserver://{conndb}\")\r\n        .option(\"query\", query)\r\n        .load()\r\n       )\r\n  return df\r\n#GET DF SQL SERVER \r\ndef get_data_sqlserver_1(conndb, query):\r\n  df = spark.read.format(\"jdbc\")\\\r\n    .option(\"driver\",\"com.microsoft.sqlserver.jdbc.SQLServerDriver\")\\\r\n    .option(\"url\",f\"jdbc:sqlserver://{conndb}\")\\\r\n    .option(\"query\",query)\\\r\n    .load()\r\n \r\n### GET DATA\r\nuser = \"sa\"\r\npassword = \"P@ssw0rd\"\r\nhost = \"172.18.141.16\"\r\nport = \"1433\"\r\nconndb = f\"{host}:{port};user={user};password={password};\"\r\nquery = f\"\"\"\r\nSELECT * \r\nFROM [9000_PORTAL_DLY].[dbo].[DLY_KW_PINJAMAN_V2]\r\nwhere BR#=5062\r\n  AND POSISI in('2025-12-31', '2026-01-31')\r\n\"\"\"\r\ndata = get_data_sqlserver(conndb, query)\r\n#data.printSchema()\r\n#data.show(100, False)\r\n#data.count()\r\n \r\n### EXPORT TO CSV\r\n(\r\n  data\r\n  .coalesce(1)\r\n  .write\r\n  .mode(\"overwrite\")\r\n  .format(\"csv\")\r\n  .option(\"ignoreLeadingWhiteSpace\", \"false\")\r\n  .option(\"ignoreTrailingWhiteSpace\", \"false\")\r\n  .option(\"compression\", \"gzip\")\r\n  .option(\"header\", \"true\")\r\n  .option(\"sep\", \"|\")\r\n  .save(path_export)\r\n)\r\n{code}\r\n ",
+                "updateAuthor": "Dudin Muhamad Awaludin",
+                "created": "2026-05-12T12:37:32.403+0700",
+                "updated": "2026-05-12T12:37:32.403+0700"
+            },
+            {
+                "id": "2747674",
+                "author": "Handi Bagus Prasetyo",
+                "body": "untuk data yang nulls memang apa adanya dan sudah dikonfirmasi dengan PIC terkait.",
+                "updateAuthor": "Handi Bagus Prasetyo",
+                "created": "2026-05-12T15:24:20.479+0700",
+                "updated": "2026-05-12T15:24:20.479+0700"
+            }
+        ],
+        "maxResults": 2,
+        "total": 2,
+        "startAt": 0
+    },
+    "Σ Progress": {
+        "progress": 0,
+        "total": 0
+    },
+    "Subject Matter Expert": "Ilham Rizki Ramadhan",
+    "Data Analyst DRE": "Primarratna Setiyopamuji"
+}

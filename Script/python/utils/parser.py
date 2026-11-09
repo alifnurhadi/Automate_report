@@ -42,6 +42,7 @@ def parse_json(args:dict):
     'langkah_kerja':' | '.join({pseudocode,langkah,final_code}),
     'disclaimer':data_field.get('Disclaimer',''),
     'group_adhoc':data_field.get('Group AdHoc',[])[0],
+    'status':data_field.get('Status','')
     }
     return structure
 

@@ -21,6 +21,10 @@ def _text(args):
         return "\n".join(map(str, args))
     return str(args)
 
+def _join(v):
+    if isinstance(v, (list, tuple)):
+        return ' | '.join(str(x) for x in v)
+    return str(v or '')
 
 
 
@@ -29,6 +33,7 @@ def parse_json(args:dict):
     pseudocode = data_field.get('Pseudocode','')
     langkah = data_field.get('Langkah Pengerjaan','')
     final_code =  data_field.get('Query Final','')
+
 
     structure =  {
     'ticket' : args['key'],
@@ -39,7 +44,7 @@ def parse_json(args:dict):
     'start_wbs' : data_field.get('Data Analyst Start Date',''),
     'end_wbs' : data_field.get('End date',''),
     'description':data_field['Description'],
-    'langkah_kerja':' | '.join({pseudocode,langkah,final_code}),
+    'langkah_kerja':_join([pseudocode,langkah,final_code]),
     'disclaimer':data_field.get('Disclaimer',''),
     'group_adhoc':data_field.get('Group AdHoc',[])[0],
     'status':data_field.get('Status','')
@@ -66,19 +71,20 @@ def adf_to_text(node):
     return inner
 
 def simplify(value):
-
+    def _lower(v):
+        return v.lower() if isinstance(v, str) else v
     if value is None:
         return None
     if isinstance(value, dict):
         if value.get("type") == "doc":
-            return adf_to_text(value).strip()
+            return adf_to_text(value).strip().lower()
         for key in ("displayName", "name", "value", "key", "filename"):
             if key in value:
                 return value[key]
 
         return {k: simplify(v) for k, v in value.items() if k not in ("self", "iconUrl", "avatarUrls")}
     if isinstance(value, list):
-        return [simplify(v) for v in value]
+        return [_lower(simplify(v)) for v in value]
 
     return value
 

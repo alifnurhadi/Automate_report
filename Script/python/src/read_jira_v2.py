@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import sys
 
 from jira import JIRA
@@ -15,18 +16,49 @@ from utils.parser import parse_json, simplify
 
 
 secret_path = Path(__file__).resolve().parent.parent / "secret.json"
+RANGE_RE = re.compile(r'^(?P<prefix>.+-)(?P<start>\d+)\.\.(?P<end>\d+)$')
+MAX_RANGE = 3000
+
 print(secret_path)
 def load_issue_keys(args, parser):
+    def expand_key(token: str) -> list[str]:
+        token = token.strip().upper()
+        m = RANGE_RE.match(token)
+        if not m:
+            return [token]
+
+        start, end = int(m["start"]), int(m["end"])
+        if start > end:
+            raise ValueError(f"Invalid range '{token}': start number bigger than the end-number")
+        if end - start + 1 > MAX_RANGE:
+            raise ValueError(f"Range '{token}' exceed {MAX_RANGE} tickets allow for the machine")
+
+        return [f"{m['prefix']}{n}" for n in range(start, end + 1)]
     if bool(args.issue_key) == bool(args.file):
         parser.error("Repeat action, Put only either the ticket it self as the argument or the .txt file contains the issue")
 
     if args.file:
-        with open(args.file, encoding="utf-8") as f:
-            keys = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+            # utf-8-sig drops a BOM that Notepad/PowerShell may add to the file.
+            # A line may hold one key or several keys separated by whitespace
+            # (e.g. tickets_to_update_keys.txt); lines starting with '#' are comments.
+        with open(args.file, encoding="utf-8-sig") as f:
+            keys = [
+                key
+                for line in f
+                if not line.lstrip().startswith("#")
+                for key in line.split()
+            ]
     else:
         keys = args.issue_key
 
-    return list(dict.fromkeys(keys))
+    keys_final = []
+    for token in keys:
+        try:
+            keys_final.extend(expand_key(token))
+        except ValueError as e:
+            parser.error(str(e))
+
+    return list(dict.fromkeys(keys_final))
 
 
 def build_filled_fields(issue, id_to_name):
@@ -52,7 +84,7 @@ def parse_args(argv=None):
     p.add_argument("--api", choices=["2", "3"], default="2", help="REST API version")
     args = p.parse_args(argv)
     args.keys = load_issue_keys(args, p)
-    return args
+    return args , p
 
 def jira_access(path , api="2"):
     '''Returning jira-client and id-to-name data'''

@@ -82,9 +82,9 @@ def parse_args(argv=None):
     p.add_argument("--no-save", action="store_true", help="Print only")
     p.add_argument("--format", choices=["json", "raw"], default="json")
     p.add_argument("--api", choices=["2", "3"], default="2", help="REST API version")
-    args = p.parse_args(argv)
-    args.keys = load_issue_keys(args, p)
-    return args , p
+    # args = p.parse_args(argv)
+    # args.keys = load_issue_keys(args, p)
+    return p
 
 def jira_access(path , api="2"):
     '''Returning jira-client and id-to-name data'''

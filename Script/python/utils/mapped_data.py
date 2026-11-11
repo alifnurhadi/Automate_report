@@ -1,108 +1,3 @@
-# from collections import Counter
-# import os
-# from pathlib import Path
-#
-# BASE_DIR = Path(__file__).resolve().parent.parent
-# SECRET_PATH = BASE_DIR / "secret.json"
-#
-# MAX_WORKERS = min(32, (os.cpu_count() or 1) + 4)
-#
-# CATEGORY_MAPPING = {
-#     'critical_report': 'Critical Report',
-#     'general_ledger': 'General Ledger',
-#     'rekening_koran': 'Rekening Koran',
-# }
-#
-# CRITICAL_REPORT = {
-#     'from datalake.`10000_cr_', 'tical report', ' ds between'
-# }
-#
-# GENERAL_LEDGER = {
-#     'selisih', 'gl ', 'general ledger', '_glhist', 'gl number',
-#     'rincian gl', "172.18.53.138", "172.24.49.242", "172.18.36.229",
-#     "172.24.83.98", "172.18.141.2"
-# }
-#
-# REKENING_KORAN = {
-#     '.[request_account_statement_channel]', 'nomor rekening',
-#     '_ddhist', '172.18.76.23', '8000_rc', 'ment_rc'
-# }
-#
-# CATEGORIES_KEYWORDS = {
-#     'critical_report': CRITICAL_REPORT,
-#     'general_ledger': GENERAL_LEDGER,
-#     'rekening_koran': REKENING_KORAN
-# }
-#
-#
-# def extract_all_strings(val) -> list[str]:
-#     """Recursively extract string values from nested dicts, lists, or primitives."""
-#     texts = []
-#     if val is None:
-#         return texts
-#     if isinstance(val, str):
-#         if val.strip():
-#             texts.append(val.strip())
-#     elif isinstance(val, (list, tuple, set)):
-#         for item in val:
-#             texts.extend(extract_all_strings(item))
-#     elif isinstance(val, dict):
-#         for sub_val in val.values():
-#             texts.extend(extract_all_strings(sub_val))
-#     else:
-#         texts.append(str(val))
-#     return texts
-#
-#
-# def check_logic(issue_data: dict, compare_value: dict = None) -> dict:
-#     """Evaluate issue against mapped category keywords using majority vote."""
-#     ticket_key = issue_data.get('ticket', '')
-#
-#     raw_adhoc = issue_data.get('group_adhoc') or issue_data.get('Group AdHoc', '')
-#     adhoc_texts = extract_all_strings(raw_adhoc)
-#     current_adhoc = adhoc_texts[0] if adhoc_texts else ""
-#
-#     searchable_values = [
-#         issue_data.get('title', ''),
-#         issue_data.get('server', ''),
-#         issue_data.get('database', ''),
-#         issue_data.get('table', ''),
-#         issue_data.get('description', ''),
-#         issue_data.get('langkah_kerja', ''),
-#         issue_data.get('disclaimer', ''),
-#         issue_data.get('filled_fields', {})
-#     ]
-#
-#     combined_text = " ".join(extract_all_strings(searchable_values)).lower()
-#
-#     matches = []
-#     for cat_key, keywords in CATEGORIES_KEYWORDS.items():
-#         for kw in keywords:
-#             if kw.lower() in combined_text:
-#                 matches.append(cat_key)
-#
-#     counts = Counter(matches)
-#     if counts:
-#         top_cat_key, _ = counts.most_common(1)[0]
-#         suggested_adhoc = CATEGORY_MAPPING.get(top_cat_key, top_cat_key)
-#     else:
-#         suggested_adhoc = current_adhoc or "Unknown"
-#
-#     needs_update = bool(
-#         suggested_adhoc != "Unknown" and
-#         current_adhoc.lower() != suggested_adhoc.lower()
-#     )
-#     status = "suggested to change" if needs_update else "no-changes"
-#
-#     return {
-#         "ticket": ticket_key,
-#         "old_group_adhoc": current_adhoc,
-#         "suggested_group_adhoc": suggested_adhoc,
-#         "status": status,
-#         "needs_update": needs_update
-#     }
-#
-#
 import os
 from pathlib import Path
 
@@ -138,18 +33,17 @@ CATEGORIES_KEYWORDS = {
     'rekening_koran': REKENING_KORAN
 }
 
+COMPLEXITY_GROUP = {
+    'Simple':{'Critical Report','General Ledger','Rekening Koran'}
+}
+
 SEARCH_FIELDS = [
     'title', 'server', 'database', 'table',
     'description', 'langkah_kerja', 'disclaimer', 'filled_fields',
 ]
 
-# parse_json() joins these with ' | ', so one field can hold several values.
-# Each value is checked on its own instead of as one merged blob of text.
 MULTI_VALUE_FIELDS = {'server', 'database', 'table'}
 
-# The winning category needs at least this many keyword hits (summed over all
-# items). A top score below this is treated as weak evidence -> keep the
-# current group and make no suggestion.
 MIN_WINNING_SCORE = 2
 
 
@@ -309,6 +203,65 @@ def check_logic(issue_data: dict, compare_value: dict = None) -> dict:
         "item_scores": item_results,
         "category_totals": decision["totals"],
         "decision_summary": summary,
+    }
+
+
+def get_complexity_for_category(category_name: str) -> str:
+    """Map category name to complexity group from COMPLEXITY_GROUP."""
+    if category_name in ( '', None ):
+        return ""
+    for complexity_level, categories in COMPLEXITY_GROUP.items():
+        if any(cat.lower() == str(category_name).lower() for cat in categories):
+            return complexity_level
+    return ""
+
+
+def check_complexity_logic(issue_data: dict, compare_value: dict = None) -> dict:
+    """Evaluate ticket complexity based on Jira Complexity field or mapped category."""
+    ticket_key = issue_data.get('ticket', '')
+
+    raw_complexity = issue_data.get('complexity') or issue_data.get('Complexity', '')
+
+    adhoc_texts = extract_all_strings(raw_complexity)
+    current_complexity = adhoc_texts[0] if adhoc_texts else ""
+
+    if not raw_complexity and 'filled_fields' in issue_data:
+        raw_complexity = issue_data['filled_fields'].get('Complexity', '')
+
+    cat_result = check_logic(issue_data)
+    detected_category = cat_result.get('old_group_adhoc', '')
+
+    print('[debug] : original',raw_complexity , ' ' , ticket_key)
+    print('[debug] :',repr(raw_complexity))
+    if raw_complexity in ('' , None ) :
+        print('[debug] :here', ' ' , ticket_key, ' ',detected_category)
+        suggested_complexity = get_complexity_for_category(detected_category)
+        print('[debug] : suggested\n ',suggested_complexity , ' ' , ticket_key)
+    else:
+        print('[debug] :there ', ' ' , ticket_key)
+        suggested_complexity = raw_complexity
+    # Derive suggested complexity from category or mapped complexity rules
+
+
+    needs_update = bool(
+        suggested_complexity != "Unknown"
+        and current_complexity.lower() != suggested_complexity.lower()
+    )
+    status = "suggested to change" if needs_update else "no-changes"
+
+    summary = (
+        f"{ticket_key}: Complexity '{current_complexity or 'NOT_FOUND'}' -> '{suggested_complexity}' "
+        f"[{status}] (mapped from category '{detected_category}')"
+    )
+
+    return {
+        "ticket": ticket_key,
+        "old_complexity": current_complexity,
+        "suggested_complexity": suggested_complexity,
+        "category": detected_category,
+        "status": status,
+        "needs_update": needs_update,
+        "decision_summary": summary
     }
 
 

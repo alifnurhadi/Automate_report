@@ -775,28 +775,6 @@ if __name__ == "__main__":
         ]
     )
 
-    # test_complexity_update(
-    #     client=client,
-    #     ticket_key="ERA25-498",
-    #     new_value="Simple",
-    # )
-
 # if __name__ == "__main__":
 
-#     client, id_name = jira_access(SECRET_PATH)
-#
-#     test_editable_field(client, "ERA25-498", "Group AdHoc")
-#     test_editable_field(client, "ERA25-498", "Complexity")
-#
-#     print(f"Mapping file: {EDITABLE_FIELDS_PATH}")
-#     print(f"Total mapped fields: {len(EDITABLE_FIELDS)}")
-#
-#     for name, field_id in EDITABLE_FIELDS.items():
-#         print(f"{name:<35} -> {field_id}")
-#
-#     print("\n[TEST] Group AdHoc:")
-#     print(EDITABLE_FIELDS.get("Group AdHoc"))
-#
-#     print("\n[TEST] Complexity:")
-#     print(EDITABLE_FIELDS.get("Complexity", "NOT FOUND"))
     # main()

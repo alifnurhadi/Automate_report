@@ -156,7 +156,9 @@ def write_output(result, out="jira_snapshots", filename='' , save=True):
     )
 
 def main(path_cfg):
-    args = parse_args()
+    parser = parse_args()
+    args = parser.parse_args()
+    args.keys = load_issue_keys(args, parser)
     ticket , details = parse_tickets(args.keys, path_cfg , args.format, args)
     return args,  ticket , details
 

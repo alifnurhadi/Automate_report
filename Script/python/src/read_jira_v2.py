@@ -65,11 +65,12 @@ def build_filled_fields(issue, id_to_name):
     """
     getting value need to mapped
     """
-    filled = {
-        id_to_name.get(field_id, field_id): simplify(value)
-        for field_id, value in issue.raw["fields"].items()
-        if value not in (None, "", [], {})
-    }
+    # filled = {
+    #     id_to_name.get(field_id, field_id): simplify(value)
+    #     for field_id, value in issue.raw["fields"].items()
+    #     if value not in (None, "", [], {})
+    # }
+    filled = issue.raw['fields']
     filled.setdefault("Description", "")
     return filled
 
@@ -82,8 +83,7 @@ def parse_args(argv=None):
     p.add_argument("--no-save", action="store_true", help="Print only")
     p.add_argument("--format", choices=["json", "raw"], default="json")
     p.add_argument("--api", choices=["2", "3"], default="2", help="REST API version")
-    # args = p.parse_args(argv)
-    # args.keys = load_issue_keys(args, p)
+
     return p
 
 def jira_access(path , api="2"):
@@ -107,26 +107,42 @@ def jira_access(path , api="2"):
 def parse_tickets(keys , path , fmt:str ,args )-> tuple[set , dict]:
 
     client, id_to_name = jira_access(  path , args.api)
-
+    from utils.log import activity_logger
     result = {}
     for key in keys:
         try:
             issue = client.issue(key)
+            print(['DEBUG -',issue ])
             if fmt == "raw":
-                result[issue.key] = issue.raw
+                try:
+                    print('raw-error')
+                    result[issue.key] = issue.raw
+                except Exception as e:
+                    msg = f'{e} | raw'
+                    activity_logger(log=msg , key=key)
+                    result[issue.key] = issue.raw
             else:
-                result[issue.key] = parse_json(
-                    {"key": issue.key, "filled_fields": build_filled_fields(issue, id_to_name)}
-                )
-            print(f"SUCCESS: {issue.key}", file=sys.stderr)
+                try:
+                    print('parsing-error')
+                    print(build_filled_fields(issue, id_to_name))
+                    result[issue.key] = parse_json(
+                        {"key": issue.key, "filled_fields": build_filled_fields(issue, id_to_name)}
+                    )
+                except Exception as e:
+                    msg = f'{e} | raw'
+                    activity_logger(log=msg , key=key)
 
+            print(f"SUCCESS: {issue.key}", file=sys.stderr)
+            print(issue)
         except JIRAError as e:
             msg = f"{e.status_code}: {e.text}"
             result[key] = {"error": msg}
-            print(f"ERROR: {key} - {msg}", file=sys.stderr)
+            print(f"jiraERROR: {key} - {msg}", file=sys.stderr)
+            activity_logger(key=key,log = msg)
         except Exception as e:
             result[key] = {"error": str(e)}
-            print(f"ERROR: {key} - {e}", file=sys.stderr)
+            print(f"exceptionERROR: {key} - {e}", file=sys.stderr)
+            activity_logger(key=key,log = e)
 
     ticket_num = set(result.keys())
 
@@ -170,4 +186,4 @@ if __name__ == "__main__":
     print(detail)
     print(ticket)
     write_output(detail, args.out, 'result_detail' ,  not args.no_save)
-    write_output(ticket, args.out, 'tickets' ,  not args.no_save)
+    write_output(ticket, args.out, 'tickets',  not args.no_save)

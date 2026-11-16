@@ -731,7 +731,7 @@ def main():
                 update_keys_file,
             )
 
-tickets = ['ERA25-27','ERA25-498','ERA25-41','ERA25-42','ERA25-77','ERA25-82','ERA25-113','ERA25-116']
+tickets = ['ERA26-1804','ERA25-498']
 
 
 if __name__ == "__main__":
@@ -765,15 +765,15 @@ if __name__ == "__main__":
         tickets
 )
     print('ERA26')
-    inspect_complexity_bulk(
-        client,
-        [
-            "ERA26-625",
-            "ERA26-487",
-            "ERA26-500",
-            "ERA26-501",
-        ]
-    )
+    # inspect_complexity_bulk(
+    #     client,
+    #     [
+    #         "ERA26-625",
+    #         "ERA26-487",
+    #         "ERA26-500",
+    #         "ERA26-501",
+    #     ]
+    # )
 
 # if __name__ == "__main__":
 

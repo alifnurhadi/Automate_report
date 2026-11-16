@@ -1,5 +1,8 @@
 
 
+import json
+
+
 def describe_field_meta(meta):
     """Turn one entry of editmeta / transition fields into a small readable dict."""
     out = {
@@ -34,23 +37,28 @@ def parse_json(args:dict):
     langkah = data_field.get('Langkah Pengerjaan','')
     final_code =  data_field.get('Query Final','')
 
+    temp_path = r'C:\Users\Iykra03\Documents\Iykra_alif\Script\python\jira_editable_field.json'
 
-    structure =  {
-    'ticket' : args['key'],
-    'title':data_field.get('Summary',''),
-    'server':' | '.join(data_field.get('Server','')),
-    'database':' | '.join(data_field.get('Database','')),
-    'table':' | '.join(data_field.get('Tabel','')),
-    'start_wbs' : data_field.get('Data Analyst Start Date',''),
-    'end_wbs' : data_field.get('End date',''),
-    'description':data_field.get('Description',''),
-    'langkah_kerja':_join([pseudocode,langkah,final_code]),
-    'disclaimer':data_field.get('Disclaimer',''),
-    'group_adhoc':data_field.get('Group AdHoc',[])[0] if data_field.get('Group AdHoc') else '',
-    'complexity':data_field.get('Complexity','') or data_field.get('complexity',''),
-    'status':data_field.get('Status',''),
-    'filled_fields':data_field
+    with open(temp_path, 'r') as temp:
+        map_field = json.load(temp)
+
+    structure = {
+        'ticket': args['key'],
+        'title': data_field.get(map_field.get('Summary'), ''),
+        'server': ' | '.join(data_field.get(map_field.get('Server'), '')),
+        'database': ' | '.join(data_field.get(map_field.get('Database'), '')),
+        'table': ' | '.join(data_field.get(map_field.get('Tabel'), '')),
+        'start_wbs': data_field.get(map_field.get('Data Analyst Start Date'), ''),
+        'end_wbs': data_field.get(map_field.get('End date'), ''),
+        'description': data_field.get(map_field.get('Description'), ''),
+        'langkah_kerja': _join([pseudocode, langkah, final_code]),
+        'disclaimer': data_field.get(map_field.get('Disclaimer'), ''),
+        'group_adhoc': data_field.get(map_field.get('Group AdHoc'), [])[0].get('value',''),
+        'complexity': data_field.get(map_field.get('Complexity'), '').get('value','') ,
+        'status': data_field.get('status', '').get('name',''),
+        # 'filled_fields': data_field
     }
+    print(pseudocode,'\n',langkah,'\n',final_code)
     return structure
 
 def adf_to_text(node):

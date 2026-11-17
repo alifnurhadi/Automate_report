@@ -12,7 +12,7 @@ import sys
 from jira import JIRA
 from jira.exceptions import JIRAError
 
-from utils.parser import parse_json, simplify
+from utils.parser import `, simplify
 
 
 secret_path = Path(__file__).resolve().parent.parent / "secret.json"
@@ -109,6 +109,7 @@ def parse_tickets(keys , path , fmt:str ,args )-> tuple[set , dict]:
     client, id_to_name = jira_access(  path , args.api)
     from utils.log import activity_logger
     result = {}
+    map_path = r'C:\Users\Iykra03\Documents\Iykra_alif\Script\python\jira_editable_field.json'
     for key in keys:
         try:
             issue = client.issue(key)
@@ -125,8 +126,10 @@ def parse_tickets(keys , path , fmt:str ,args )-> tuple[set , dict]:
                 try:
                     print('parsing-error')
                     print(build_filled_fields(issue, id_to_name))
-                    result[issue.key] = parse_json(
-                        {"key": issue.key, "filled_fields": build_filled_fields(issue, id_to_name)}
+                    result[issue.key] = `(
+                        {"key": issue.key,
+                            "filled_fields": build_filled_fields(issue, id_to_name)} ,
+                        path = map_path
                     )
                 except Exception as e:
                     msg = f'{e} | raw'

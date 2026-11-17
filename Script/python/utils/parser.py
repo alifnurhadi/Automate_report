@@ -1,6 +1,7 @@
 
 
 import json
+import re
 
 
 def describe_field_meta(meta):
@@ -29,34 +30,34 @@ def _join(v):
         return ' | '.join(str(x) for x in v)
     return str(v or '')
 
+def parse_json(args:dict , path):
+    jira_field = args.get('filled_fields',{})
 
-
-def parse_json(args:dict):
-    data_field = args.get('filled_fields',{})
-    pseudocode = data_field.get('Pseudocode','')
-    langkah = data_field.get('Langkah Pengerjaan','')
-    final_code =  data_field.get('Query Final','')
-
-    temp_path = r'C:\Users\Iykra03\Documents\Iykra_alif\Script\python\jira_editable_field.json'
+    temp_path = path
 
     with open(temp_path, 'r') as temp:
         map_field = json.load(temp)
 
+    pseudocode = jira_field.get(map_field('Pseudocode'),'')
+    langkah = jira_field.get(map_field('Langkah Pengerjaan'),'')
+    final_code =  jira_field.get(map_field('Query Final'),'')
+
+
     structure = {
         'ticket': args['key'],
-        'title': data_field.get(map_field.get('Summary'), ''),
-        'server': ' | '.join(data_field.get(map_field.get('Server'), '')),
-        'database': ' | '.join(data_field.get(map_field.get('Database'), '')),
-        'table': ' | '.join(data_field.get(map_field.get('Tabel'), '')),
-        'start_wbs': data_field.get(map_field.get('Data Analyst Start Date'), ''),
-        'end_wbs': data_field.get(map_field.get('End date'), ''),
-        'description': data_field.get(map_field.get('Description'), ''),
+        'title': jira_field.get(map_field.get('Summary'), ''),
+        'server': ' | '.join(jira_field.get(map_field.get('Server'), '')),
+        'database': ' | '.join(jira_field.get(map_field.get('Database'), '')),
+        'table': ' | '.join(jira_field.get(map_field.get('Tabel'), '')),
+        'start_wbs': jira_field.get(map_field.get('Data Analyst Start Date'), ''),
+        'end_wbs': jira_field.get(map_field.get('End date'), ''),
+        'description': jira_field.get(map_field.get('Description'), ''),
         'langkah_kerja': _join([pseudocode, langkah, final_code]),
-        'disclaimer': data_field.get(map_field.get('Disclaimer'), ''),
-        'group_adhoc': data_field.get(map_field.get('Group AdHoc'), [])[0].get('value',''),
-        'complexity': data_field.get(map_field.get('Complexity'), '').get('value','') ,
-        'status': data_field.get('status', '').get('name',''),
-        # 'filled_fields': data_field
+        'disclaimer': jira_field.get(map_field.get('Disclaimer'), ''),
+        'group_adhoc': jira_field.get(map_field.get('Group AdHoc'), [])[0].get('value',''),
+        'complexity': jira_field.get(map_field.get('Complexity'), '').get('value','') ,
+        'status': jira_field.get('status', '').get('name',''),
+        # 'filled_fields': jira_field
     }
     print(pseudocode,'\n',langkah,'\n',final_code)
     return structure
@@ -97,6 +98,90 @@ def simplify(value):
         return [_lower(simplify(v)) for v in value]
 
     return value
+
+
+def normalizeTablename(text:str):
+    '''normalize table name so it can be used to query to a database'''
+    hasil = text.strip().lower()
+
+    if ' ' in text:
+        return hasil.replace(' ','')
+    return hasil
+
+def fetchJiraFieldDescription (text:str , **group)-> list[str]:
+    cr_tag = re.compile(r'[a-zA-Z]{2}\d{3}|[a-zA-Z]{2}\s\d{3}')
+    gl_tag = re.compile(r'\d{12}')
+    rk_tag = re.compile(r'\d{15}')
+
+    adhoc = group.get('adhoc',None)
+    assert type(adhoc) == str
+    valid_group = {'Critical Report' , 'General Ledger' , 'Rekening Koran'}
+    if not adhoc :
+        raise KeyError(
+            """
+            can't process data when key 'adhoc' not exist do put parameter ```adhoc = value in string ```
+            available value are ['Critical Report' , 'General Ledger' , 'Rekening Koran']
+            """)
+
+    if adhoc not in valid_group:
+        raise ValueError("""
+            valid available value are ['Critical Report' , 'General Ledger' , 'Rekening Koran']
+        """)
+
+    findings = ['']
+    match adhoc:
+        case 'Critical Report':
+            findings = cr_tag.findall(text)
+        case 'General Ledger':
+            findings = gl_tag.findall(text)
+        case 'Rekening Koran':
+            findings = rk_tag.findall(text)
+
+    return findings
+
+def fetchPeriod(text:str , format:str = 'dd/mm/yyyy' ,grouped:bool = True ):
+    """
+    # Default function is to process range of period, if single period set grouped = False
+    #
+    format available
+    - 'dd/mm/yyyy' -> 31/12/2026
+    - 'mm/dd/yyyy' -> 12/31/2026
+    - 'bbb/yyyy' -> Mar/2026
+    """
+    announce = """
+    FORMAT PASS TO THIS FUNCTION MUST ALIGN TO THE PATTERN BELOW OR WILL GET UNEXPECTED RESULT\n
+    format available
+    'dd/mm/yyyy' -> 31/12/2026
+    'mm/dd/yyyy' -> 12/31/2026
+    'bbb/yyyy' -> Mar/2026
+    """
+    print(announce)
+    patternmatchSource = {
+        'yyyy' : '%Y',
+        'mm':'%m',
+        'dd':'%d',
+        'bbb':'%b'
+    }
+    delimiter = '/' if '/' in format else '-'
+    periodPattern = format.split(delimiter)
+
+    unknownPattern = periodPattern - patternmatchSource.keys()
+
+    if len(unknownPattern)>0:
+        raise ValueError('there are pattern that arent recognized please follow these pattern '+announce)
+
+    pyPattern = delimiter.join([patternmatchSource.get(v) for v in periodPattern])
+
+    pattern_0 = r'\d{2}\/\d{2}\/\d{4}' if len(periodPattern) == 3 else  r'\w{3}\/\d{4}'
+
+    if grouped :
+        pattern_0 += f' - {pattern_0}'
+
+    pattern_1 = re.compile(pattern_0)
+
+    result = pattern_1.findall(text)
+
+    return result
 
 if __name__ == '__main__':
     print('This only utils tools')

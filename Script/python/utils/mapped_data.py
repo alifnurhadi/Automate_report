@@ -24,7 +24,7 @@ GENERAL_LEDGER = {
 
 REKENING_KORAN = {
     '.[request_account_statement_channel]',
-    '_ddhist', '172.18.76.23', '8000_rc', 'ment_rc'
+    '_ddhist', '172.18.76.23', '8000_rc', 'ment_rc','rekening koran'
 }
 
 CATEGORIES_KEYWORDS = {
@@ -38,7 +38,7 @@ COMPLEXITY_GROUP = {
 }
 
 SEARCH_FIELDS = [
-    'title', 'server', 'database', 'table',
+    'title', 'database', 'table',
     'description', 'langkah_kerja', 'disclaimer', 'filled_fields',
 ]
 
@@ -108,11 +108,7 @@ def match_item(text: str) -> dict:
 
 
 def score_items(issue_data: dict) -> list[dict]:
-    """Step 1: one temporary result per value, not one per field.
 
-    A field with three tables produces three results, each checked against
-    every category. An empty field produces a single placeholder (item=None).
-    """
     results = []
     for field in SEARCH_FIELDS:
         items = list(iter_items(field, issue_data.get(field)))
@@ -175,7 +171,7 @@ def check_logic(issue_data: dict, compare_value: dict = None) -> dict:
     """Score every item, decide the category, and only then flag a change."""
     ticket_key = issue_data.get('ticket', '')
 
-    raw_adhoc = issue_data.get('group_adhoc') or issue_data.get('Group AdHoc', '')
+    raw_adhoc = issue_data.get('group_adhoc') or issue_data.get('customfield_14400', '')
     adhoc_texts = extract_all_strings(raw_adhoc)
     current_adhoc = adhoc_texts[0] if adhoc_texts else ""
 
@@ -231,14 +227,9 @@ def check_complexity_logic(issue_data: dict, compare_value: dict = None) -> dict
     cat_result = check_logic(issue_data)
     detected_category = cat_result.get('old_group_adhoc', '')
 
-    print('[debug] : original',raw_complexity , ' ' , ticket_key)
-    print('[debug] :',repr(raw_complexity))
     if raw_complexity in ('' , None ) :
-        print('[debug] :here', ' ' , ticket_key, ' ',detected_category)
         suggested_complexity = get_complexity_for_category(detected_category)
-        print('[debug] : suggested\n ',suggested_complexity , ' ' , ticket_key)
     else:
-        print('[debug] :there ', ' ' , ticket_key)
         suggested_complexity = raw_complexity
     # Derive suggested complexity from category or mapped complexity rules
 

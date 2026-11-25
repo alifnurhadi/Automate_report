@@ -1,5 +1,4 @@
 
-
 import json
 import re
 
@@ -30,37 +29,76 @@ def _join(v):
         return ' | '.join(str(x) for x in v)
     return str(v or '')
 
-def parse_json(args:dict , path):
-    jira_field = args.get('filled_fields',{})
+def parse_json(args: dict, path):
 
-    temp_path = path
+    step = "initialization"
+    # print(args)
+    try:
+        jira_field = args.get('filled_fields', {})
 
-    with open(temp_path, 'r') as temp:
-        map_field = json.load(temp)
+        with open(path, 'r') as temp:
+            map_field = json.load(temp)
 
-    pseudocode = jira_field.get(map_field('Pseudocode'),'')
-    langkah = jira_field.get(map_field('Langkah Pengerjaan'),'')
-    final_code =  jira_field.get(map_field('Query Final'),'')
+        step = "pseudocode"
+        pseudocode = jira_field.get(map_field.get('Pseudocode'), '')
 
+        step = "langkah"
+        langkah = jira_field.get(map_field.get('Langkah Pengerjaan'),'')
 
-    structure = {
-        'ticket': args['key'],
-        'title': jira_field.get(map_field.get('Summary'), ''),
-        'server': ' | '.join(jira_field.get(map_field.get('Server'), '')),
-        'database': ' | '.join(jira_field.get(map_field.get('Database'), '')),
-        'table': ' | '.join(jira_field.get(map_field.get('Tabel'), '')),
-        'start_wbs': jira_field.get(map_field.get('Data Analyst Start Date'), ''),
-        'end_wbs': jira_field.get(map_field.get('End date'), ''),
-        'description': jira_field.get(map_field.get('Description'), ''),
-        'langkah_kerja': _join([pseudocode, langkah, final_code]),
-        'disclaimer': jira_field.get(map_field.get('Disclaimer'), ''),
-        'group_adhoc': jira_field.get(map_field.get('Group AdHoc'), [])[0].get('value',''),
-        'complexity': jira_field.get(map_field.get('Complexity'), '').get('value','') ,
-        'status': jira_field.get('status', '').get('name',''),
-        # 'filled_fields': jira_field
-    }
-    print(pseudocode,'\n',langkah,'\n',final_code)
-    return structure
+        step = "query_final"
+        final_code = jira_field.get(map_field.get('Query Final'), '')
+
+        step = "server"
+        # print(jira_field)
+        # print(jira_field.get(map_field.get('Server'), ['']))
+        valueServer = jira_field.get(map_field.get('Server'), ['']) or ['']
+        server = (' | '.join(valueServer)).lower()
+
+        step = "database"
+        valueDatabase = jira_field.get(map_field.get('Database'), ['']) or ['']
+        database = (' | '.join(valueDatabase)).lower()
+
+        step = "table"
+        valueTable = jira_field.get(map_field.get('Tabel'), ['']) or ['']
+        table = (' | '.join(valueTable)).lower()
+
+        step = "description"
+        description = jira_field.get(map_field.get('Description'), '').lower()
+
+        step = "langkah_kerja"
+        langkah_kerja = _join([pseudocode, langkah, final_code]).lower()
+
+        step = "disclaimer"
+        valueDisclaimer = jira_field.get(map_field.get('Disclaimer'), '') or ''
+        disclaimer = valueDisclaimer.lower()
+
+        step = "final_structure"
+        structure = {
+            'ticket': args['key'],
+            'title': jira_field.get(map_field.get('Summary'), ''),
+            'server': server,
+            'database': database,
+            'table': table,
+            'start_wbs': jira_field.get(map_field.get('Data Analyst Start Date'), ''),
+            'end_wbs': jira_field.get(map_field.get('End date'), ''),
+            'description': description,
+            'langkah_kerja': langkah_kerja,
+            'pseudocode': pseudocode,
+            'query_final': final_code,
+            'pengerjaan': langkah,
+            'disclaimer': disclaimer,
+            'group_adhoc': (jira_field.get(map_field.get('Group AdHoc'), '') or [{}])[0].get('value', ''),
+            'complexity': jira_field.get(map_field.get('Complexity'), {'':''}).get('value', ''),
+            'status': jira_field.get('status', '').get('name', ''),
+        }
+
+        print(f"[SUCCESS] {args['key']}")
+        return structure
+
+    except Exception as e:
+        print(f"[ERROR] Ticket: {args.get('key')} | Step: {step}")
+        print(f"{type(e).__name__}: {e}")
+        raise
 
 def adf_to_text(node):
     if isinstance(node, str):
@@ -109,7 +147,7 @@ def normalizeTablename(text:str):
     return hasil
 
 def fetchJiraFieldDescription (text:str , **group)-> list[str]:
-    cr_tag = re.compile(r'[a-zA-Z]{2}\d{3}|[a-zA-Z]{2}\s\d{3}')
+    cr_tag = re.compile(r'[a-zA-Z]{2}\d{3}|[a-zA-Z]{2}\s\d{3}|[a-zA-Z]{1}\d+')
     gl_tag = re.compile(r'\d{12}')
     rk_tag = re.compile(r'\d{15}')
 
@@ -165,7 +203,7 @@ def fetchPeriod(text:str , format:str = 'dd/mm/yyyy' ,grouped:bool = True ):
     delimiter = '/' if '/' in format else '-'
     periodPattern = format.split(delimiter)
 
-    unknownPattern = periodPattern - patternmatchSource.keys()
+    unknownPattern = set(periodPattern) - patternmatchSource.keys()
 
     if len(unknownPattern)>0:
         raise ValueError('there are pattern that arent recognized please follow these pattern '+announce)

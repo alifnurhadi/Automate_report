@@ -1,5 +1,3 @@
-
-
 from utils.parser import fetchJiraFieldDescription , fetchPeriod , normalizeTablename
 
 txt:str = '''# test

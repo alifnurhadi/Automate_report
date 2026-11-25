@@ -1,12 +1,16 @@
-
-from collections import Counter
 import concurrent.futures
-from datetime import datetime
-import difflib
 import json
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
+
+_SRC = Path(__file__).resolve().parent
+for _p in (_SRC, _SRC.parent):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
+
+from datetime import datetime
+from pathlib import Path
 
 from read_jira_v2 import (
     build_filled_fields,
@@ -24,33 +28,65 @@ from utils.mapped_data import (
 )
 from utils.parser import parse_json, simplify
 
-
-SNAPSHOTS_DIR = Path(__file__).resolve().parent.parent / "jira_snapshots"
-
-EDITABLE_FIELDS_PATH = (
-    Path(__file__).resolve().parents[1]
-    / "jira_editable_field.json"
-)
-
-
-
-
-
+from utils.paths import SNAPSHOTS_DIR
+EDITABLE_FIELDS_PATH = Path(__file__).resolve().parents[1] / "jira_editable_field.json"
 EMPTY_COMPLEXITY_OK_CATEGORIES = {"lain-lain"}
 
-def load_editable_fields():
+JIRA_FIELD_PATH = r'C:\Users\Iykra03\Documents\Iykra_alif\Script\python\jira_editable_field.json'
+
+def log(*args):
+    print(*args, file=sys.stderr)
+
+
+def _norm(value) -> str:
+    return str(value).strip().lower()
+
+
+def load_editable_fields() -> dict:
     with EDITABLE_FIELDS_PATH.open("r", encoding="utf-8") as f:
         fields = json.load(f)
-
     if not isinstance(fields, dict):
         raise ValueError("jira_editable_field.json must contain a JSON object")
-
     return fields
 
 
-def _field_is_empty(filled: dict, field_name: str) -> bool:
-    wanted = field_name.strip().lower()
-    return not any(str(name).strip().lower() == wanted for name in filled)
+EDITABLE_FIELDS = load_editable_fields()
+
+TARGET_FIELDS = {
+    "category": {
+        "jira_name": "Group AdHoc",
+        "field_id": EDITABLE_FIELDS.get("Group AdHoc"),
+        "json_key": "suggested_group_adhoc",
+        "entry_keys": (
+            "old_group_adhoc",
+            "suggested_group_adhoc",
+            "category_totals",
+            "decision_summary",
+        ),
+    },
+    "complexity": {
+        "jira_name": "Complexity",
+        "field_id": EDITABLE_FIELDS.get("Complexity"),
+        "json_key": "suggested_complexity",
+        "entry_keys": (
+            "old_complexity",
+            "suggested_complexity",
+            "category",
+            "decision_summary",
+        ),
+    },
+}
+
+
+# ---------- helpers ----------
+
+def target_paths(mode: str):
+    stem = f"tickets_to_update_{mode}"
+    return (
+        SNAPSHOTS_DIR / f"{stem}.json",
+        SNAPSHOTS_DIR / f"{stem}_log.txt",
+        SNAPSHOTS_DIR / f"{stem}_keys.txt",
+    )
 
 
 def _ticket_sort_key(key: str):
@@ -59,70 +95,54 @@ def _ticket_sort_key(key: str):
     return (m.group(1), int(m.group(2))) if m else (key, 0)
 
 
-def write_update_keys(results: list[dict], keys_file: Path):
+def _sorted_by_ticket(items):
+    return sorted(items, key=lambda r: _ticket_sort_key(r["ticket"]))
+
+
+def _field_is_empty(filled: dict, field_name: str) -> bool:
+    return not any(_norm(name) == _norm(field_name) for name in filled)
+
+
+def pending_entry(res: dict, mode: str) -> dict:
+    entry = {"ticket": res["ticket"]}
+    entry.update({k: res.get(k) for k in TARGET_FIELDS[mode]["entry_keys"]})
+    if mode == "complexity":
+        entry["complexity_missing"] = bool(res.get("complexity_missing"))
+    return entry
+
+
+# ---------- pending / log files ----------
+
+def write_update_keys(items: list[dict], keys_file: Path):
     """Write the keys that need an update, space-separated."""
     keys_file.parent.mkdir(parents=True, exist_ok=True)
-    keys = sorted(
-        (r["ticket"] for r in results),
-        key=_ticket_sort_key,
-    )
+    keys = [r["ticket"] for r in _sorted_by_ticket(items)]
     keys_file.write_text(" ".join(keys) + "\n", encoding="utf-8")
-    print(
-        f"Wrote {len(keys)} key(s) for CLI use to: {keys_file}",
-        file=sys.stderr,
-    )
+    log(f"Wrote {len(keys)} key(s) for CLI use to: {keys_file}")
 
 
-def merge_pending(
-    pending_file: Path,
-    update_list: list[dict],
-    scanned_ok: set,
-):
+def merge_pending(pending_file: Path, update_list: list[dict], scanned_ok: set):
     existing = []
-
     if pending_file.exists():
         try:
-            existing = json.loads(
-                pending_file.read_text(encoding="utf-8")
-            )
+            loaded = json.loads(pending_file.read_text(encoding="utf-8"))
+            existing = loaded if isinstance(loaded, list) else []
         except (json.JSONDecodeError, OSError):
-            print(
-                "Could not read existing pending file; using this scan only.",
-                file=sys.stderr,
-            )
-
-        if not isinstance(existing, list):
-            existing = []
+            log("Could not read existing pending file; using this scan only.")
 
     fresh = {item["ticket"] for item in update_list}
-
-    kept = [
-        item for item in existing
-        if item.get("ticket") not in scanned_ok
-    ]
-
-    removed = [
-        item for item in existing
-        if item.get("ticket") in scanned_ok
-        and item.get("ticket") not in fresh
-    ]
-
-    merged = sorted(
-        kept + update_list,
-        key=lambda item: _ticket_sort_key(item["ticket"]),
+    kept = [i for i in existing if i.get("ticket") not in scanned_ok]
+    removed = sum(
+        1 for i in existing
+        if i.get("ticket") in scanned_ok and i.get("ticket") not in fresh
     )
+    merged = _sorted_by_ticket(kept + update_list)
+    return merged, existing, len(kept), removed
 
-    return merged, existing, len(kept), len(removed)
 
-
-def append_update_log(
-    results: list[dict],
-    log_file: Path,
-    mode: str = "category",
-):
+def append_update_log(results: list[dict], log_file: Path, mode: str):
     """Append tickets that need an update to a text log."""
     log_file.parent.mkdir(parents=True, exist_ok=True)
-
     stamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     with open(log_file, "a", encoding="utf-8") as f:
@@ -130,202 +150,108 @@ def append_update_log(
             f"##### Run {stamp} [{mode}] | "
             f"{len(results)} ticket(s) need update #####\n\n"
         )
-
-        for res in sorted(
-            results,
-            key=lambda r: _ticket_sort_key(r["ticket"]),
-        ):
+        for res in _sorted_by_ticket(results):
             if mode == "complexity":
-                note = (
-                    "NOTE: Complexity field is empty\n"
-                    if res.get("complexity_missing")
-                    else ""
-                )
+                note = "NOTE: Complexity field is empty\n" if res.get("complexity_missing") else ""
                 f.write(
-                    f"=== {res['ticket']} ===\n"
-                    f"{note}"
+                    f"=== {res['ticket']} ===\n{note}"
                     f"SUMMARY: {res.get('decision_summary')}\n\n"
                 )
             else:
                 f.write(format_calculation(res) + "\n\n")
 
-    print(
-        f"Appended {len(results)} ticket(s) to log: {log_file}",
-        file=sys.stderr,
-    )
+    log(f"Appended {len(results)} ticket(s) to log: {log_file}")
 
+
+# ---------- Jira field helpers ----------
 
 def find_editable_field(client, ticket_key: str, field_name: str):
     field_id = EDITABLE_FIELDS.get(field_name)
-
     if not field_id:
-        raise LookupError(
-            f"Field '{field_name}' not found in {EDITABLE_FIELDS_PATH}"
-        )
+        raise LookupError(f"Field '{field_name}' not found in {EDITABLE_FIELDS_PATH}")
 
-    editable_fields = client.editmeta(ticket_key).get("fields", {})
-    info = editable_fields.get(field_id)
-
+    info = client.editmeta(ticket_key).get("fields", {}).get(field_id)
     if not info:
-        raise LookupError(
-            f"Field '{field_name}' ({field_id}) is not editable on {ticket_key}"
-        )
-
+        raise LookupError(f"Field '{field_name}' ({field_id}) is not editable on {ticket_key}")
     return field_id, info
 
-def test_editable_field(client, ticket_key: str, field_name: str):
-    field_id = EDITABLE_FIELDS.get(field_name)
-
-    if not field_id:
-        print(f"[NOT FOUND] {field_name} is missing from JSON mapping")
-        return
-
-    editable_fields = client.editmeta(ticket_key).get("fields", {})
-    info = editable_fields.get(field_id)
-
-    if info:
-        print(f"\n[EDITABLE] {field_name} -> {field_id}")
-        print(f"Field type: {info.get('schema', {}).get('type')}")
-        print(f"Allowed values: {info.get('allowedValues', [])}")
-    else:
-        print(f"\n[NOT EDITABLE] {field_name} -> {field_id}")
-
-def discover_jira_field(client, field_name: str):
-    wanted = field_name.strip().lower()
-
-    matches = [
-        field
-        for field in client.fields()
-        if (field.get("name") or "").strip().lower() == wanted
-    ]
-
-    if not matches:
-        print(f"[NOT FOUND] '{field_name}' does not exist in Jira's global field registry.")
-        return []
-
-    print(f"\n[GLOBAL FIELD MATCHES] {field_name}")
-
-    for field in matches:
-        print(f"Name: {field.get('name')}")
-        print(f"ID:   {field.get('id')}")
-        print(f"Type: {field.get('schema', {}).get('type')}")
-        print("-" * 35)
-
-    return matches
-
-def inspect_complexity_fields(client, ticket_key):
-    issue = client.issue(ticket_key)
-    raw_fields = issue.raw.get("fields", {})
-
-    print(f"\n[INSPECT] {ticket_key}")
-
-    for field_id in ["customfield_23257", "customfield_22134"]:
-        value = raw_fields.get(field_id)
-
-        print(f"\nField ID: {field_id}")
-        print(f"Current value: {value}")
-
-        try:
-            field_info = next(
-                f for f in client.fields()
-                if f.get("id") == field_id
-            )
-            print(f"Field name: {field_info.get('name')}")
-            print(f"Schema: {field_info.get('schema')}")
-        except StopIteration:
-            print("Field metadata not found")
 
 def build_field_payload(info: dict, value: str):
     """Convert suggested text into Jira's expected field payload."""
     schema = info.get("schema") or {}
-    ftype = schema.get("type")
-    items = schema.get("items")
+    ftype, items = schema.get("type"), schema.get("items")
     allowed = info.get("allowedValues") or []
 
-    match = None
-
-    for opt in allowed:
-        label = opt.get("value") or opt.get("name")
-
-        if (
-            label is not None
-            and str(label).strip().lower() == str(value).strip().lower()
-        ):
-            match = opt
-            break
-
+    match = next(
+        (
+            opt for opt in allowed
+            if (opt.get("value") or opt.get("name")) is not None
+            and _norm(opt.get("value") or opt.get("name")) == _norm(value)
+        ),
+        None,
+    )
     if allowed and match is None:
         raise ValueError("Value is not an allowed option")
 
-    option = (
-        {"id": match["id"]}
-        if match and "id" in match
-        else {"value": value}
-    )
+    option = {"id": match["id"]} if match and "id" in match else {"value": value}
 
     if ftype == "array":
         return [value] if items == "string" else [option]
-
     if ftype in ("option", "option-with-child"):
         return option
-
     if ftype == "string":
         return value
-
     raise ValueError(f"Unsupported field type: {ftype}")
 
 
 def _current_values(issue, field_id: str) -> list[str]:
-    """Return current field values in lowercase."""
     raw = issue.raw["fields"].get(field_id)
-    return [
-        s.lower()
-        for s in extract_all_strings(simplify(raw))
-    ]
+    return [s.lower() for s in extract_all_strings(simplify(raw))]
 
 
-def apply_changes(
-    client,
-    pending_file: Path,
-    target_mode: str,
-    dry_run: bool,
-    only_keys: set = None,
-):
+def _log_apply_error(key: str, exc: Exception):
+    SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    with open(SNAPSHOTS_DIR / "apply_errors.log", "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now()} | {key} | {type(exc).__name__}: {exc}\n")
+
+
+def inspect_field(client, ticket_keys: list[str], field_id: str):
+    """Debug helper: show type / value / editability of one field per ticket."""
+    for key in ticket_keys:
+        try:
+            fields = client.issue(key).raw.get("fields", {})
+            editable = field_id in client.editmeta(key).get("fields", {})
+            print(
+                f"{key} | Type: {fields.get('issuetype', {}).get('name')} | "
+                f"Value: {fields.get(field_id)} | Editable: {editable}"
+            )
+        except Exception as exc:
+            print(f"{key} | ERROR: {exc}")
+
+
+# ---------- apply ----------
+
+def apply_changes(client, pending_file: Path, target_mode: str, dry_run: bool, only_keys=None):
     """Apply pending Jira updates and verify each update."""
-
     if dry_run:
-        print(
-            f"*** DRY RUN [{target_mode}]: nothing will be written to Jira ***"
-        )
+        print(f"*** DRY RUN [{target_mode}]: nothing will be written to Jira ***")
 
     if not pending_file.exists():
-        print(
-            f"No pending updates file found at {pending_file}",
-            file=sys.stderr,
-        )
+        log(f"No pending updates file found at {pending_file}")
         return
 
-    with open(pending_file, "r", encoding="utf-8") as f:
-        tickets_to_update = json.load(f)
+    tickets = json.loads(pending_file.read_text(encoding="utf-8"))
 
     if only_keys is not None:
-        in_file = {item["ticket"] for item in tickets_to_update}
-
-        for missing in sorted(
-            only_keys - in_file,
-            key=_ticket_sort_key,
-        ):
-            print(f"[SKIP] {missing}")
-
-        tickets_to_update = [
-            item for item in tickets_to_update
-            if item["ticket"] in only_keys
-        ]
+        in_file = {item["ticket"] for item in tickets}
+        for missing in sorted(only_keys - in_file, key=_ticket_sort_key):
+            print(f"[SKIP] {missing} (not in pending file)")
+        tickets = [t for t in tickets if t["ticket"] in only_keys]
 
     cfg = TARGET_FIELDS[target_mode]
-    counts = {"updated": 0, "skipped": 0}
+    counts = {"updated": 0, "skipped": 0, "would_update": 0}
 
-    for item in tickets_to_update:
+    for item in tickets:
         key = item["ticket"]
         new_val = item.get(cfg["json_key"])
 
@@ -334,20 +260,11 @@ def apply_changes(
                 raise ValueError("Missing suggested value")
 
             issue = client.issue(key)
-
-            field_id, info = find_editable_field(
-                client,
-                key,
-                cfg["jira_name"],
-            )
-
+            field_id, info = find_editable_field(client, key, cfg["jira_name"])
             current = _current_values(issue, field_id)
 
-            if current == [new_val.strip().lower()]:
-                print(
-                    f"[SKIP] {key}: "
-                    f"{cfg['jira_name']} already correct"
-                )
+            if current == [_norm(new_val)]:
+                print(f"[SKIP] {key}: {cfg['jira_name']} already correct")
                 counts["skipped"] += 1
                 continue
 
@@ -355,258 +272,79 @@ def apply_changes(
             before = current or "(empty)"
 
             if dry_run:
-                print(
-                    f"[DRY-RUN] {key}: {before} -> {payload}"
-                )
+                print(f"[DRY-RUN] {key}: {before} -> {payload}")
+                counts["would_update"] += 1
                 continue
 
             issue.update(fields={field_id: payload})
 
-            after = _current_values(
-                client.issue(key),
-                field_id,
-            )
-
-            if new_val.strip().lower() not in after:
+            if _norm(new_val) not in _current_values(client.issue(key), field_id):
                 raise RuntimeError("Update verification failed")
 
-            print(
-                f"[SUCCESS] {key}: {cfg['jira_name']} "
-                f"{before} -> '{new_val}'"
-            )
-
+            print(f"[SUCCESS] {key}: {cfg['jira_name']} {before} -> '{new_val}'")
             counts["updated"] += 1
 
         except Exception as e:
-            error_log = SNAPSHOTS_DIR / "apply_errors.log"
-
-            with open(error_log, "a", encoding="utf-8") as f:
-                f.write(
-                    f"{datetime.now()} | {key} | "
-                    f"{type(e).__name__}: {e}\n"
-                )
-
-            print(f"[SKIP] {key}")
+            _log_apply_error(key, e)
+            print(f"[SKIP] {key} (see apply_errors.log)")
             counts["skipped"] += 1
 
-    mode = " (dry run, nothing written)" if dry_run else ""
+    summary = f"{counts['updated']} updated, {counts['skipped']} skipped"
+    if dry_run:
+        summary = f"{counts['would_update']} would update, {counts['skipped']} skipped (dry run)"
+    log(f"\nApply finished: {summary}")
 
-    print(
-        f"\nApply finished{mode}: "
-        f"{counts['updated']} updated, "
-        f"{counts['skipped']} skipped",
-        file=sys.stderr,
-    )
 
-def test_complexity_update(client, ticket_key: str, new_value: str = "Simple"):
-    FIELD_ID = "customfield_23257"
+# ---------- scan ----------
 
-    print(f"\n[TEST UPDATE] {ticket_key}")
-    print(f"Field: Complexity ({FIELD_ID})")
-    print(f"New value: {new_value}")
-
-    try:
-        # Read current value
-        issue = client.issue(ticket_key)
-        current = issue.raw.get("fields", {}).get(FIELD_ID)
-
-        print(f"[BEFORE] {current}")
-
-        # Safety check: only update an empty field
-        if current is not None:
-            print("[ABORT] Complexity is not empty. No changes made.")
-            return False
-
-        # Update Jira single-select field
-        issue.update(
-            fields={
-                FIELD_ID: {"value": new_value}
-            }
-        )
-
-        print("[UPDATE REQUEST] Submitted successfully.")
-
-        # Fetch again to verify
-        updated_issue = client.issue(ticket_key)
-        updated_value = (
-            updated_issue.raw.get("fields", {}).get(FIELD_ID)
-        )
-
-        actual_value = (
-            updated_value.get("value")
-            if isinstance(updated_value, dict)
-            else updated_value
-        )
-
-        print(f"[AFTER] {updated_value}")
-
-        if actual_value == new_value:
-            print(f"[SUCCESS] Complexity updated to '{new_value}'.")
-            return True
-
-        print("[WARNING] Update submitted, but verification did not match.")
-        return False
-
-    except Exception as exc:
-        print(f"[FAILED] Jira update failed: {exc}")
-        return False
-
-def process_single_ticket(
-    ticket_key: str,
-    client,
-    id_name: dict,
-    mode: str = "category",
-) -> dict:
+def process_single_ticket(ticket_key: str, client, id_name: dict, mode: str) -> dict:
     """Fetch ticket and evaluate category or complexity logic."""
-
     try:
-        ticket = client.issue(ticket_key)
+        filled = build_filled_fields(client.issue(ticket_key), id_name)
+        parsed = parse_json({"key": ticket_key, "filled_fields": filled} , JIRA_FIELD_PATH)
 
-        filled = build_filled_fields(ticket, id_name)
+        if mode != "complexity":
+            return check_logic(parsed)
 
-        parsed = parse_json({
-            "key": ticket_key,
-            "filled_fields": filled,
-        })
+        result = check_complexity_logic(parsed)
+        empty = _field_is_empty(filled, TARGET_FIELDS["complexity"]["jira_name"])
+        category = _norm(result.get("category") or "")
+        result["complexity_empty"] = empty
+        result["complexity_missing"] = empty and category not in EMPTY_COMPLEXITY_OK_CATEGORIES
+        return result
 
-        if mode == "complexity":
-            result = check_complexity_logic(parsed)
-
-            result["complexity_empty"] = _field_is_empty(
-                filled,
-                TARGET_FIELDS["complexity"]["jira_name"],
-            )
-
-            category = str(
-                result.get("category") or ""
-            ).strip().lower()
-
-            result["complexity_missing"] = (
-                result["complexity_empty"]
-                and category not in EMPTY_COMPLEXITY_OK_CATEGORIES
-            )
-
-            return result
-
-        return check_logic(parsed)
-
-    except Exception:
-        # Do not return or expose exception details.
+    except Exception as e:
+        import traceback; traceback.print_exc()   # TEMP: remove after debugging
         return {
             "ticket": ticket_key,
             "status": "error",
             "needs_update": False,
+            "error": type(e).__name__,
         }
 
 
+def scan_tickets(ticket_keys, client, id_name, mode):
+    update_list, update_results, scanned_ok = [], [], set()
+    scanned = skipped = 0
 
-EDITABLE_FIELDS = load_editable_fields()
-TARGET_FIELDS = {
-    "category": {
-        "jira_name": "Group AdHoc",
-        "field_id": EDITABLE_FIELDS.get("Group AdHoc"),
-        "json_key": "suggested_group_adhoc",
-    },
-    "complexity": {
-        "jira_name": "Complexity",
-        "field_id": EDITABLE_FIELDS.get("Complexity"),
-        "json_key": "suggested_complexity",
-    },
-}
-def main():
-
-    parser = parse_args()
-
-    parser.add_argument(
-        "--target",
-        choices=["category", "complexity"],
-        default="category",
-        help="Target realigning mode: category or complexity",
-    )
-
-    parser.add_argument(
-        "--apply",
-        action="store_true",
-        help="Apply saved updates to Jira",
-    )
-
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="With --apply: show what would be written",
-    )
-
-    args_val = parser.parse_args()
-
-    target_mode = getattr(args_val, "target", "category")
-
-    pending_file = (
-        SNAPSHOTS_DIR / f"tickets_to_update_{target_mode}.json"
-    )
-
-    update_log_file = (
-        SNAPSHOTS_DIR / f"tickets_to_update_{target_mode}_log.txt"
-    )
-
-    update_keys_file = (
-        SNAPSHOTS_DIR / f"tickets_to_update_{target_mode}_keys.txt"
-    )
-
-    client, id_name = jira_access(SECRET_PATH)
-
-    if args_val.apply:
-        only_keys = (
-            set(load_issue_keys(args_val, parser))
-            if (args_val.issue_key or args_val.file)
-            else None
-        )
-
-        apply_changes(
-            client,
-            pending_file,
-            target_mode,
-            args_val.dry_run,
-            only_keys,
-        )
-        return
-
-    ticket_keys = load_issue_keys(args_val, parser)
-
-    update_list = []
-    update_results = []
-
-    scanned = 0
-    scanned_ok = set()
-    skipped_count = 0
-
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=MAX_WORKERS
-    ) as executor:
-
-        futures = {
-            executor.submit(
-                process_single_ticket,
-                key,
-                client,
-                id_name,
-                target_mode,
-            ): key
+    with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [
+            executor.submit(process_single_ticket, key, client, id_name, mode)
             for key in ticket_keys
-        }
+        ]
 
         for future in concurrent.futures.as_completed(futures):
-
             res = future.result()
             scanned += 1
 
             if res.get("status") == "error":
-                print(f"[SKIP] {res['ticket']}")
-                skipped_count += 1
+                print(f"[SKIP] {res['ticket']} ({res.get('error')})")
+                skipped += 1
                 continue
 
             scanned_ok.add(res["ticket"])
 
-            if target_mode == "complexity":
+            if mode == "complexity":
                 print(
                     f"Ticket: {res['ticket']} | "
                     f"Old Complexity: '{res.get('old_complexity')}' | "
@@ -615,166 +353,88 @@ def main():
                     f"Status: {res['status']} | "
                     f"Complexity missing: {res.get('complexity_missing')}"
                 )
-
             else:
                 print(format_calculation(res))
                 print()
 
             if res.get("needs_update") or res.get("complexity_missing"):
-
                 update_results.append(res)
+                update_list.append(pending_entry(res, mode))
 
-                if target_mode == "complexity":
-                    update_list.append({
-                        "ticket": res["ticket"],
-                        "old_complexity": res.get("old_complexity"),
-                        "suggested_complexity": res.get("suggested_complexity"),
-                        "category": res.get("category"),
-                        "complexity_missing": bool(
-                            res.get("complexity_missing")
-                        ),
-                        "decision_summary": res.get("decision_summary"),
-                    })
+    return update_list, update_results, scanned_ok, scanned, skipped
 
-                else:
-                    update_list.append({
-                        "ticket": res["ticket"],
-                        "old_group_adhoc": res["old_group_adhoc"],
-                        "suggested_group_adhoc": res["suggested_group_adhoc"],
-                        "category_totals": res.get("category_totals"),
-                        "decision_summary": res.get("decision_summary"),
-                    })
 
-    empty_count = sum(
-        1 for u in update_list
-        if u.get("complexity_missing")
-    )
+def save_scan(update_list, update_results, scanned_ok, mode, files):
+    pending_file, log_file, keys_file = files
 
-    empty_note = (
-        f" ({empty_count} with empty Complexity)"
-        if target_mode == "complexity"
-        else ""
-    )
+    merged, existing, kept, removed = merge_pending(pending_file, update_list, scanned_ok)
+    changed = merged != existing
 
-    no_change = scanned - len(update_list) - skipped_count
-
-    print(
-        f"\nScanned {scanned} ticket(s): "
-        f"{len(update_list)} need update{empty_note}, "
-        f"{no_change} no change, "
-        f"{skipped_count} skipped",
-        file=sys.stderr,
-    )
-
-    if not args_val.no_save:
-
-        merged, existing, kept, removed = merge_pending(
-            pending_file,
-            update_list,
-            scanned_ok,
+    if changed:
+        SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+        pending_file.write_text(
+            json.dumps(merged, indent=4, ensure_ascii=False), encoding="utf-8"
         )
+        log(
+            f"\nPending file updated: {len(merged)} [{mode}] ticket(s) now pending "
+            f"({len(update_list)} from this scan, {kept} kept from earlier scans, "
+            f"{removed} removed): {pending_file}"
+        )
+    elif merged or pending_file.exists():
+        log(f"\nPending file unchanged: {len(merged)} [{mode}] ticket(s) pending: {pending_file}")
+    else:
+        log("\nNo ticket needs an update and there is no pending file.")
 
-        changed = merged != existing
+    if update_results:
+        append_update_log(update_results, log_file, mode)
 
-        if changed:
-            SNAPSHOTS_DIR.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
+    if changed or (merged and not keys_file.exists()):
+        write_update_keys(merged, keys_file)
 
-            with open(
-                pending_file,
-                "w",
-                encoding="utf-8",
-            ) as f:
-                json.dump(
-                    merged,
-                    f,
-                    indent=4,
-                    ensure_ascii=False,
-                )
 
-            print(
-                f"\nPending file updated: {len(merged)} "
-                f"[{target_mode}] ticket(s) now pending "
-                f"({len(update_list)} from this scan, "
-                f"{kept} kept from earlier scans, "
-                f"{removed} removed): {pending_file}",
-                file=sys.stderr,
-            )
+def main():
+    parser = parse_args()
+    parser.add_argument("--target", choices=["category", "complexity"], default="category",
+                        help="Target realigning mode: category or complexity")
+    parser.add_argument("--apply", action="store_true", help="Apply saved updates to Jira")
+    parser.add_argument("--dry-run", action="store_true", help="With --apply: show what would be written")
+    parser.add_argument("--inspect", action="store_true",
+                        help="Show type/value/editability of the target field for the given tickets")
+    args = parser.parse_args()
 
-        elif merged or pending_file.exists():
-            print(
-                f"\nPending file unchanged: {len(merged)} "
-                f"[{target_mode}] ticket(s) pending: {pending_file}",
-                file=sys.stderr,
-            )
+    if args.dry_run and not args.apply:
+        parser.error("--dry-run only works together with --apply")
 
-        else:
-            print(
-                "\nNo ticket needs an update and there is no pending file.",
-                file=sys.stderr,
-            )
+    mode = args.target
+    files = target_paths(mode)
+    client, id_name = jira_access(SECRET_PATH)
 
-        if update_results:
-            append_update_log(
-                update_results,
-                update_log_file,
-                mode=target_mode,
-            )
+    if args.inspect:
+        inspect_field(client, load_issue_keys(args, parser), TARGET_FIELDS[mode]["field_id"])
+        return
 
-        if changed or (
-            merged and not update_keys_file.exists()
-        ):
-            write_update_keys(
-                merged,
-                update_keys_file,
-            )
+    if args.apply:
+        only_keys = set(load_issue_keys(args, parser)) if (args.issue_key or args.file) else None
+        apply_changes(client, files[0], mode, args.dry_run, only_keys)
+        return
 
-tickets = ['ERA26-1804','ERA25-498']
+    update_list, update_results, scanned_ok, scanned, skipped = scan_tickets(
+        load_issue_keys(args, parser), client, id_name, mode
+    )
+
+    empty_note = ""
+    if mode == "complexity":
+        empty_count = sum(1 for u in update_list if u.get("complexity_missing"))
+        empty_note = f" ({empty_count} with empty Complexity)"
+
+    log(
+        f"\nScanned {scanned} ticket(s): {len(update_list)} need update{empty_note}, "
+        f"{scanned - len(update_list) - skipped} no change, {skipped} skipped"
+    )
+
+    if not args.no_save:
+        save_scan(update_list, update_results, scanned_ok, mode, files)
 
 
 if __name__ == "__main__":
-    client, id_name = jira_access(SECRET_PATH)
-    def inspect_complexity_bulk(client, ticket_keys):
-        field_id = "customfield_23257"
-
-        for key in ticket_keys:
-            try:
-                issue = client.issue(key)
-                fields = issue.raw.get("fields", {})
-
-                editmeta = client.editmeta(key).get("fields", {})
-
-                issue_type = fields.get("issuetype", {}).get("name")
-                current = fields.get(field_id)
-
-                print(
-                    f"{key} | "
-                    f"Type: {issue_type} | "
-                    f"Value: {current} | "
-                    f"Editable: {field_id in editmeta}"
-                )
-
-            except Exception as exc:
-                print(f"{key} | ERROR: {exc}")
-
-
-    inspect_complexity_bulk(
-        client,
-        tickets
-)
-    print('ERA26')
-    # inspect_complexity_bulk(
-    #     client,
-    #     [
-    #         "ERA26-625",
-    #         "ERA26-487",
-    #         "ERA26-500",
-    #         "ERA26-501",
-    #     ]
-    # )
-
-# if __name__ == "__main__":
-
-    # main()
+    main()

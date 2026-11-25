@@ -4,6 +4,8 @@ import json
 import random
 from time import sleep
 
+from utils.paths import MSG_PATH
+
 
 def create_task():
 
@@ -25,7 +27,7 @@ def create_task():
 
 def main():
 
-    path = r'C:\Users\Iykra03\Documents\Iykra_alif\Docs/msg.json'
+    path = MSG_PATH
 
 
     while 1:

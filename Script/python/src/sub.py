@@ -3,6 +3,8 @@ import json
 import random
 from time import sleep
 
+from utils.paths import MSG_PATH
+
 
 def calculate(args:int):
 
@@ -15,7 +17,7 @@ def calculate(args:int):
 
 
 def main():
-    path = r'C:\Users\Iykra03\Documents\Iykra_alif\Docs/msg.json'
+    path = MSG_PATH
 
 
     while 1:

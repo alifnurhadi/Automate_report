@@ -3,6 +3,7 @@ Fetch Jira tickets with the `jira` library and save a JSON snapshot.
 """
 
 import argparse
+from inspect import trace
 import json
 import os
 from pathlib import Path
@@ -12,7 +13,9 @@ import sys
 from jira import JIRA
 from jira.exceptions import JIRAError
 
-from utils.parser import `, simplify
+sys.path.append('../')
+from utils.parser import parse_json, simplify
+from utils.paths import SNAPSHOTS_DIR
 
 
 secret_path = Path(__file__).resolve().parent.parent / "secret.json"
@@ -75,11 +78,11 @@ def build_filled_fields(issue, id_to_name):
     return filled
 
 
-def parse_args(argv=None):
+def createArgs(argv=None):
     p = argparse.ArgumentParser(description="Fetch Jira tickets and save snapshots.")
     p.add_argument("issue_key", nargs="*", help="Jira issue keys")
     p.add_argument("--file", help="TXT file with one issue key per line")
-    p.add_argument("--out", default="jira_snapshots", help="Output folder")
+    p.add_argument("--out", default=str(SNAPSHOTS_DIR), help="Output folder (shared jira_snapshots at repo root)")
     p.add_argument("--no-save", action="store_true", help="Print only")
     p.add_argument("--format", choices=["json", "raw"], default="json")
     p.add_argument("--api", choices=["2", "3"], default="2", help="REST API version")
@@ -104,48 +107,108 @@ def jira_access(path , api="2"):
     return client , id_to_name
 
 
-def parse_tickets(keys , path , fmt:str ,args )-> tuple[set , dict]:
+def parse_tickets(keys, path, fmt: str, args) -> tuple[set, dict]:
 
-    client, id_to_name = jira_access(  path , args.api)
+    client, id_to_name = jira_access(path, args.api)
     from utils.log import activity_logger
+
     result = {}
-    map_path = r'C:\Users\Iykra03\Documents\Iykra_alif\Script\python\jira_editable_field.json'
-    for key in keys:
+
+    map_path = (
+        r'C:\Users\Iykra03\Documents\Iykra_alif'
+        r'\Script\python\jira_editable_field.json'
+    )
+
+    for index, key in enumerate(keys, start=1):
+
+        print(
+            f"\n[{index}/{len(keys)}] Processing: {key}",
+            file=sys.stderr
+        )
+
         try:
             issue = client.issue(key)
-            print(['DEBUG -',issue ])
+
             if fmt == "raw":
-                try:
-                    print('raw-error')
-                    result[issue.key] = issue.raw
-                except Exception as e:
-                    msg = f'{e} | raw'
-                    activity_logger(log=msg , key=key)
-                    result[issue.key] = issue.raw
+                result[issue.key] = issue.raw
+                print(f"SUCCESS: {issue.key} | raw", file=sys.stderr)
+
             else:
                 try:
-                    print('parsing-error')
-                    print(build_filled_fields(issue, id_to_name))
-                    result[issue.key] = `(
-                        {"key": issue.key,
-                            "filled_fields": build_filled_fields(issue, id_to_name)} ,
-                        path = map_path
+                    filled_fields = build_filled_fields(
+                        issue, id_to_name
                     )
-                except Exception as e:
-                    msg = f'{e} | raw'
-                    activity_logger(log=msg , key=key)
 
-            print(f"SUCCESS: {issue.key}", file=sys.stderr)
-            print(issue)
+                    result[issue.key] = parse_json(
+                        {
+                            "key": issue.key,
+                            "filled_fields": filled_fields
+                        },
+                        path=map_path
+                    )
+
+                    print(
+                        f"SUCCESS: {issue.key} | parsed",
+                        file=sys.stderr
+                    )
+
+                except Exception as e:
+                    import traceback
+
+                    print(
+                        f"\n[PARSING ERROR] Ticket: {key}",
+                        file=sys.stderr
+                    )
+                    print(
+                        f"Error type: {type(e).__name__}",
+                        file=sys.stderr
+                    )
+                    print(
+                        f"Error message: {e}",
+                        file=sys.stderr
+                    )
+                    traceback.print_exc()
+
+                    activity_logger(
+                        log=f"{type(e).__name__}: {e} | raw fallback",
+                        key=key
+                    )
+
+                    # Preserve original Jira response
+                    result[issue.key] = issue.raw
+
+                    print(
+                        f"FALLBACK: {issue.key} | raw saved",
+                        file=sys.stderr
+                    )
+
         except JIRAError as e:
             msg = f"{e.status_code}: {e.text}"
+
             result[key] = {"error": msg}
-            print(f"jiraERROR: {key} - {msg}", file=sys.stderr)
-            activity_logger(key=key,log = msg)
+
+            print(
+                f"\n[JIRA ERROR] Ticket: {key} | {msg}",
+                file=sys.stderr
+            )
+
+            activity_logger(key=key, log=msg)
+
         except Exception as e:
+            import traceback
+
             result[key] = {"error": str(e)}
-            print(f"exceptionERROR: {key} - {e}", file=sys.stderr)
-            activity_logger(key=key,log = e)
+
+            print(
+                f"\n[FETCH ERROR] Ticket: {key}",
+                file=sys.stderr
+            )
+            traceback.print_exc()
+
+            activity_logger(key=key, log=e)
+
+        # issues=client.issue(key)
+        # result[key]=issues.raw
 
     ticket_num = set(result.keys())
 
@@ -153,7 +216,7 @@ def parse_tickets(keys , path , fmt:str ,args )-> tuple[set , dict]:
 
 
 
-def write_output(result, out="jira_snapshots", filename='' , save=True):
+def write_output(result, out=SNAPSHOTS_DIR, filename='' , save=True):
     output = json.dumps(result, indent=4, ensure_ascii=False, default=str)
 
     if save:
@@ -175,7 +238,7 @@ def write_output(result, out="jira_snapshots", filename='' , save=True):
     )
 
 def main(path_cfg):
-    parser = parse_args()
+    parser = createArgs()
     args = parser.parse_args()
     args.keys = load_issue_keys(args, parser)
     ticket , details = parse_tickets(args.keys, path_cfg , args.format, args)

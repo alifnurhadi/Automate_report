@@ -5,3 +5,6 @@ Script/python/.env*
 jira_snapshots/
 __pycache__
 *secret*
+\.backup
+*.md
+backup
